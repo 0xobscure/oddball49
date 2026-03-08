@@ -163,6 +163,30 @@ export default function App() {
       var hiPool = []; for (var h = 32; h <= 49; h++) hiPool.push(h);
       while (pool.length < 4) { var p4 = hiPool[Math.floor(Math.random() * hiPool.length)]; if (pool.indexOf(p4) === -1) pool.push(p4); }
       while (pool.length < 6) { var x4 = Math.floor(Math.random() * 49) + 1; if (pool.indexOf(x4) === -1) pool.push(x4); }
+    } else if (mode === "composite") {
+      // Composite Contrarian: stack all game theory edges
+      // 1. Build candidate pool: non-round, non-hot numbers weighted toward high zone
+      var roundNums = {10:1,20:1,30:1,40:1,5:1,15:1,25:1,35:1,45:1};
+      var hotSet = {};
+      freq.slice().sort(function(a,b){return b.count-a.count;}).slice(0,10).forEach(function(f){hotSet[f.number]=1;});
+      var candidates = [];
+      for (var ci = 1; ci <= 49; ci++) {
+        if (roundNums[ci] || hotSet[ci]) continue;
+        // Weight high zone (32-49) 3x more likely to be in candidate pool
+        candidates.push(ci);
+        if (ci > 31) { candidates.push(ci); candidates.push(ci); }
+      }
+      // 2. Pick with minimum gap enforcement (spread >= 5 between numbers)
+      var attempts = 0;
+      while (pool.length < 6 && attempts < 500) {
+        var c = candidates[Math.floor(Math.random() * candidates.length)];
+        var tooClose = false;
+        for (var gi = 0; gi < pool.length; gi++) { if (Math.abs(pool[gi] - c) < 5) { tooClose = true; break; } }
+        if (!tooClose && pool.indexOf(c) === -1) pool.push(c);
+        attempts++;
+      }
+      // Fallback if spread constraint is too tight
+      while (pool.length < 6) { var cf = Math.floor(Math.random() * 49) + 1; if (pool.indexOf(cf) === -1 && !roundNums[cf]) pool.push(cf); }
     } else {
       while (pool.length < 6) { var x3 = Math.floor(Math.random() * 49) + 1; if (pool.indexOf(x3) === -1) pool.push(x3); }
     }
@@ -177,7 +201,7 @@ export default function App() {
       pickNums("overdue"),
       pickNums("hot"),
       pickNums("highzone"),
-      pickNums("random"),
+      pickNums("composite"),
     ]);
   };
 
@@ -477,7 +501,7 @@ export default function App() {
               <button onClick={generateAll} style={{ padding: "12px 28px", background: "linear-gradient(135deg," + C.acc + ",#b45309)", color: "#000", fontWeight: 800, fontSize: 14, border: "none", borderRadius: 10, cursor: "pointer", letterSpacing: 1, textTransform: "uppercase" }}>Generate All</button>
               {strats && (
                 <div style={{ marginTop: 20, display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(280px,1fr))", gap: 12 }}>
-                  {[{id:"contrarian",l:"Contrarian",d:"Cold + high zone",c:C.acc},{id:"balanced",l:"Balanced",d:"Even spread across ranges",c:C.acc2},{id:"overdue",l:"Overdue",d:"Longest gaps since drawn",c:C.acc3},{id:"hot",l:"Popular",d:"Most picked numbers (higher co-winner risk)",c:C.acc4},{id:"highzone",l:"High Zone",d:"Anti-birthday bias (32-49)",c:C.grn},{id:"random",l:"Random",d:"Uniform baseline",c:C.dim}].map(function(meta, idx) {
+                  {[{id:"contrarian",l:"Contrarian",d:"Cold + high zone",c:C.acc},{id:"balanced",l:"Balanced",d:"Even spread across ranges",c:C.acc2},{id:"overdue",l:"Overdue",d:"Longest gaps since drawn",c:C.acc3},{id:"hot",l:"Popular",d:"Most picked numbers (higher co-winner risk)",c:C.acc4},{id:"highzone",l:"High Zone",d:"Anti-birthday bias (32-49)",c:C.grn},{id:"composite",l:"Composite Contrarian",d:"All edges: high zone + no round nums + spread + anti-hot",c:C.grn}].map(function(meta, idx) {
                     var s = strats[idx];
                     return <div key={meta.id} style={{ padding: 16, background: C.srf, borderRadius: 12, border: "1px solid " + meta.c + "33" }}>
                       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 10 }}>
