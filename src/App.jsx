@@ -1,0 +1,486 @@
+import { useState, useMemo } from "react";
+import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, Cell, Legend, ComposedChart, Area, Line } from "recharts";
+import DRAWS from "./draws.json";
+
+var TOT = 49;
+
+var C = {
+  bg:"#06080f", card:"#0d1117", border:"#1b2332", acc:"#e8a838", acc2:"#38bdf8",
+  acc3:"#a78bfa", acc4:"#f87171", txt:"#e0e6ed", dim:"#5a6a80", grn:"#34d399", srf:"#131b28"
+};
+
+var ttStyle = {background:C.card,border:"1px solid "+C.border,borderRadius:8,fontSize:11};
+
+function NumberBall(props) {
+  var num = props.num;
+  var col = num<=10?C.acc2:num<=20?C.acc3:num<=30?C.grn:num<=40?C.acc:C.acc4;
+  return (
+    <span style={{display:"inline-flex",width:24,height:24,borderRadius:"50%",alignItems:"center",justifyContent:"center",background:col+"20",color:col,fontSize:10,fontWeight:700}}>{num}</span>
+  );
+}
+
+export default function App() {
+  var _s = useState("overview"), tab = _s[0], setTab = _s[1];
+  var _r = useState("all"), drawRange = _r[0], setDrawRange = _r[1];
+  var _st = useState(null), strat = _st[0], setStrat = _st[1];
+  var _m = useState("contrarian"), mode = _m[0], setMode = _m[1];
+
+  var filtered = useMemo(function() {
+    if (drawRange === "50") return DRAWS.slice(-50);
+    if (drawRange === "20") return DRAWS.slice(-20);
+    return DRAWS;
+  }, [drawRange]);
+
+  var expFreq = (filtered.length * 6) / TOT;
+
+  var freq = useMemo(function() {
+    var f = {};
+    for (var i = 1; i <= TOT; i++) f[i] = 0;
+    filtered.forEach(function(dr) { dr.n.forEach(function(x) { f[x]++; }); });
+    return Object.entries(f).map(function(e) { return { number: +e[0], count: e[1] }; });
+  }, [filtered]);
+
+  var pairFreq = useMemo(function() {
+    var pf = {};
+    filtered.forEach(function(dr) {
+      for (var i = 0; i < dr.n.length; i++)
+        for (var j = i + 1; j < dr.n.length; j++) {
+          var k = dr.n[i] + "-" + dr.n[j];
+          pf[k] = (pf[k] || 0) + 1;
+        }
+    });
+    return Object.entries(pf).filter(function(e) { return e[1] >= 3; }).map(function(e) { return { pair: e[0], count: e[1] }; }).sort(function(a, b) { return b.count - a.count; }).slice(0, 25);
+  }, [filtered]);
+
+  var gapData = useMemo(function() {
+    var last = {};
+    for (var i = 1; i <= TOT; i++) last[i] = -1;
+    filtered.forEach(function(dr, idx) { dr.n.forEach(function(x) { last[x] = idx; }); });
+    var len = filtered.length;
+    return Object.entries(last).map(function(e) {
+      return { number: +e[0], gap: e[1] === -1 ? len : len - 1 - e[1] };
+    }).sort(function(a, b) { return b.gap - a.gap; });
+  }, [filtered]);
+
+  var oddEvenData = useMemo(function() {
+    return filtered.map(function(dr) {
+      var odd = dr.n.filter(function(x) { return x % 2 !== 0; }).length;
+      return { date: dr.d.slice(5), odd: odd, even: 6 - odd };
+    });
+  }, [filtered]);
+
+  var sumData = useMemo(function() {
+    return filtered.map(function(dr) {
+      return { date: dr.d.slice(5), sum: dr.n.reduce(function(a, b) { return a + b; }, 0) };
+    });
+  }, [filtered]);
+
+  var movAvg = useMemo(function() {
+    var w = 10;
+    return sumData.map(function(s, i) {
+      if (i < w - 1) return { date: s.date, sum: s.sum, ma: null };
+      var sl = sumData.slice(i - w + 1, i + 1);
+      var avg = Math.round(sl.reduce(function(a, b) { return a + b.sum; }, 0) / w);
+      return { date: s.date, sum: s.sum, ma: avg };
+    });
+  }, [sumData]);
+
+  var rangeData = useMemo(function() {
+    var tot = filtered.length * 6;
+    var b = [0, 0, 0, 0, 0];
+    filtered.forEach(function(dr) {
+      dr.n.forEach(function(x) {
+        if (x <= 10) b[0]++; else if (x <= 20) b[1]++; else if (x <= 30) b[2]++; else if (x <= 40) b[3]++; else b[4]++;
+      });
+    });
+    return [
+      { range: "1-10", count: b[0], expected: Math.round(tot * 10 / 49) },
+      { range: "11-20", count: b[1], expected: Math.round(tot * 10 / 49) },
+      { range: "21-30", count: b[2], expected: Math.round(tot * 10 / 49) },
+      { range: "31-40", count: b[3], expected: Math.round(tot * 10 / 49) },
+      { range: "41-49", count: b[4], expected: Math.round(tot * 9 / 49) },
+    ];
+  }, [filtered]);
+
+  var consData = useMemo(function() {
+    return filtered.map(function(dr) {
+      var c = 0;
+      var s = dr.n.slice().sort(function(a, b) { return a - b; });
+      for (var i = 1; i < s.length; i++) if (s[i] - s[i - 1] === 1) c++;
+      return { date: dr.d.slice(5), consecutive: c };
+    });
+  }, [filtered]);
+
+  var chi2 = useMemo(function() {
+    var e = expFreq;
+    var v = freq.reduce(function(s, f) { return s + Math.pow(f.count - e, 2) / e; }, 0);
+    return { value: v, critical: 65.17, passes: v < 65.17 };
+  }, [freq, expFreq]);
+
+  var serial = useMemo(function() {
+    var tot = 0;
+    for (var i = 1; i < filtered.length; i++) {
+      var prev = {};
+      filtered[i - 1].n.forEach(function(x) { prev[x] = true; });
+      filtered[i].n.forEach(function(x) { if (prev[x]) tot++; });
+    }
+    return { avg: tot / (filtered.length - 1), expected: 6 * 6 / 49 };
+  }, [filtered]);
+
+  var bday = useMemo(function() {
+    var inZ = 0, outZ = 0;
+    filtered.forEach(function(dr) {
+      dr.n.forEach(function(x) { if (x <= 31) inZ++; else outZ++; });
+    });
+    var t = filtered.length * 6;
+    return { inP: (inZ / t * 100).toFixed(1), outP: (outZ / t * 100).toFixed(1), expIn: (31 / 49 * 100).toFixed(1), expOut: (18 / 49 * 100).toFixed(1) };
+  }, [filtered]);
+
+  var generate = function() {
+    var pool = [];
+    var sortedFreq = freq.slice().sort(function(a, b) { return a.count - b.count; });
+    var cold = sortedFreq.slice(0, 20).map(function(f) { return f.number; });
+    var overdue = gapData.slice(0, 20).map(function(g) { return g.number; });
+    if (mode === "contrarian") {
+      var hi = cold.filter(function(x) { return x > 31; });
+      var lo = cold.filter(function(x) { return x <= 31; });
+      var all = hi.concat(lo);
+      while (pool.length < 6) { var p = all[Math.floor(Math.random() * all.length)]; if (pool.indexOf(p) === -1) pool.push(p); }
+    } else if (mode === "balanced") {
+      var buckets = [[1,10],[11,20],[21,30],[31,40],[41,49]]; var picks = [1,1,1,1,2]; var t = 0;
+      buckets.forEach(function(b, i) { var nd = picks[i]; while (nd > 0 && t < 6) { var x = Math.floor(Math.random() * (b[1] - b[0] + 1)) + b[0]; if (pool.indexOf(x) === -1) { pool.push(x); nd--; t++; } } });
+      while (pool.length < 6) { var x2 = Math.floor(Math.random() * 49) + 1; if (pool.indexOf(x2) === -1) pool.push(x2); }
+    } else if (mode === "overdue") {
+      while (pool.length < 6) { var p2 = overdue[Math.floor(Math.random() * Math.min(15, overdue.length))]; if (pool.indexOf(p2) === -1) pool.push(p2); }
+    } else {
+      while (pool.length < 6) { var x3 = Math.floor(Math.random() * 49) + 1; if (pool.indexOf(x3) === -1) pool.push(x3); }
+    }
+    pool.sort(function(a, b) { return a - b; });
+    setStrat({ nums: pool, sum: pool.reduce(function(a, b) { return a + b; }, 0), odd: pool.filter(function(x) { return x % 2 !== 0; }).length, high: pool.filter(function(x) { return x > 31; }).length, mode: mode });
+  };
+
+  var tabs = [
+    { id: "overview", label: "Overview" }, { id: "frequency", label: "Frequency" },
+    { id: "patterns", label: "Patterns" }, { id: "stats", label: "Stats" },
+    { id: "gametheory", label: "Game Theory" }, { id: "gen", label: "Generator" },
+  ];
+
+  var dateRange = DRAWS.length > 0 ? DRAWS[0].d.slice(0,7) + " - " + DRAWS[DRAWS.length-1].d.slice(0,7) : "";
+
+  return (
+    <div style={{ minHeight: "100vh", background: C.bg, color: C.txt, fontFamily: "'SF Mono','Cascadia Code','Fira Code',Menlo,monospace", padding: 0 }}>
+      <style>{"@import url('https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700;800&display=swap');@keyframes popIn{from{opacity:0;transform:scale(.5)}to{opacity:1;transform:scale(1)}}@keyframes fadeIn{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:translateY(0)}}@keyframes glow{0%,100%{opacity:1}50%{opacity:.5}}::-webkit-scrollbar{width:5px;height:5px}::-webkit-scrollbar-track{background:" + C.bg + "}::-webkit-scrollbar-thumb{background:#334155;border-radius:3px}"}</style>
+
+      {/* HEADER */}
+      <div style={{ padding: "26px 20px 18px", borderBottom: "1px solid " + C.border, background: "linear-gradient(180deg," + C.card + " 0%," + C.bg + " 100%)" }}>
+        <div style={{ maxWidth: 1100, margin: "0 auto" }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 5 }}>
+            <span style={{ fontSize: 22 }}>🎱</span>
+            <span style={{ fontSize: 10, color: C.acc, letterSpacing: 3, textTransform: "uppercase", fontWeight: 700 }}>The Numbers Nobody Picks</span>
+          </div>
+          <h1 style={{ fontSize: 26, fontWeight: 800, margin: 0, fontFamily: "'Space Grotesk',sans-serif", background: "linear-gradient(135deg," + C.txt + "," + C.acc + ")", WebkitBackgroundClip: "text", WebkitTextFillColor: "transparent" }}>
+            Oddball49
+          </h1>
+          <p style={{ color: C.dim, fontSize: 11, margin: "4px 0 0" }}>{DRAWS.length} draws · {dateRange} · {DRAWS.length * 6} numbers · Game theory engine</p>
+        </div>
+      </div>
+
+      {/* TABS */}
+      <div style={{ padding: "0 20px", borderBottom: "1px solid " + C.border, background: C.card + "90", position: "sticky", top: 0, zIndex: 10 }}>
+        <div style={{ maxWidth: 1100, margin: "0 auto", display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 4 }}>
+          <div style={{ display: "flex", gap: 0, overflowX: "auto" }}>
+            {tabs.map(function(t) {
+              return <button key={t.id} onClick={function() { setTab(t.id); }} style={{ padding: "11px 14px", background: "none", border: "none", color: tab === t.id ? C.acc : C.dim, fontWeight: tab === t.id ? 700 : 400, fontSize: 11, cursor: "pointer", borderBottom: tab === t.id ? "2px solid " + C.acc : "2px solid transparent", fontFamily: "inherit", whiteSpace: "nowrap" }}>{t.label}</button>;
+            })}
+          </div>
+          <div style={{ display: "flex", gap: 3 }}>
+            {[["all", "All"], ["50", "50"], ["20", "20"]].map(function(item) {
+              return <button key={item[0]} onClick={function() { setDrawRange(item[0]); }} style={{ padding: "4px 9px", fontSize: 9, fontWeight: 600, border: "1px solid " + (drawRange === item[0] ? C.acc2 : C.border), background: drawRange === item[0] ? C.acc2 + "20" : "transparent", color: drawRange === item[0] ? C.acc2 : C.dim, borderRadius: 5, cursor: "pointer", fontFamily: "inherit" }}>{item[1]}</button>;
+            })}
+          </div>
+        </div>
+      </div>
+
+      {/* CONTENT */}
+      <div style={{ maxWidth: 1100, margin: "0 auto", padding: "18px 20px 60px" }}>
+
+        {tab === "overview" && (
+          <div style={{ animation: "fadeIn .3s ease" }}>
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(140px,1fr))", gap: 10, marginBottom: 18 }}>
+              {[
+                { l: "Total Draws", v: filtered.length, s: (drawRange === "all" ? "All" : drawRange) + " draws" },
+                { l: "Numbers Drawn", v: filtered.length * 6, s: "6 per draw" },
+                { l: "Unique", v: freq.filter(function(f) { return f.count > 0; }).length, s: "of 49" },
+                { l: "Expected Freq", v: expFreq.toFixed(1), s: "per number" },
+                { l: "Chi-sq", v: chi2.passes ? "PASS" : "FAIL", s: chi2.value.toFixed(1) + " vs " + chi2.critical, c: chi2.passes ? C.grn : C.acc4 },
+                { l: "Avg Overlap", v: serial.avg.toFixed(2), s: "exp: " + serial.expected.toFixed(2) },
+              ].map(function(s, i) {
+                return (<div key={i} style={{ background: C.card, borderRadius: 10, border: "1px solid " + C.border, padding: "13px 12px" }}>
+                  <div style={{ fontSize: 9, color: C.dim, textTransform: "uppercase", letterSpacing: 1.5, marginBottom: 4 }}>{s.l}</div>
+                  <div style={{ fontSize: 20, fontWeight: 800, color: s.c || C.acc, fontFamily: "'Space Grotesk',sans-serif" }}>{s.v}</div>
+                  <div style={{ fontSize: 9, color: C.dim, marginTop: 2 }}>{s.s}</div>
+                </div>);
+              })}
+            </div>
+            <div style={{ background: C.card, borderRadius: 12, border: "1px solid " + C.border, overflow: "hidden" }}>
+              <div style={{ padding: "12px 16px", borderBottom: "1px solid " + C.border }}>
+                <h3 style={{ margin: 0, fontSize: 13, fontWeight: 700, fontFamily: "'Space Grotesk',sans-serif" }}>All {filtered.length} Draws</h3>
+              </div>
+              <div style={{ maxHeight: 460, overflowY: "auto" }}>
+                <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 11 }}>
+                  <thead><tr style={{ background: C.srf, position: "sticky", top: 0, zIndex: 1 }}>
+                    {["Date", "Numbers", "+", "Sum", "O/E"].map(function(h) { return <th key={h} style={{ padding: "7px 10px", textAlign: "left", color: C.dim, fontWeight: 600, fontSize: 9, textTransform: "uppercase", letterSpacing: 1 }}>{h}</th>; })}
+                  </tr></thead>
+                  <tbody>{filtered.slice().reverse().map(function(dr, i) { return (
+                    <tr key={i} style={{ borderTop: "1px solid " + C.border + "22" }}>
+                      <td style={{ padding: "6px 10px", color: C.dim, fontSize: 10 }}>{dr.d}</td>
+                      <td style={{ padding: "6px 10px" }}><div style={{ display: "flex", gap: 3 }}>{dr.n.map(function(x) { return <NumberBall key={x} num={x} />; })}</div></td>
+                      <td style={{ padding: "6px 10px", color: C.dim, fontSize: 10 }}>{dr.a}</td>
+                      <td style={{ padding: "6px 10px", fontWeight: 600, fontSize: 10 }}>{dr.n.reduce(function(a, b) { return a + b; }, 0)}</td>
+                      <td style={{ padding: "6px 10px", color: C.dim, fontSize: 10 }}>{dr.n.filter(function(x) { return x % 2 !== 0; }).length}/{dr.n.filter(function(x) { return x % 2 === 0; }).length}</td>
+                    </tr>); })}</tbody>
+                </table>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {tab === "frequency" && (
+          <div style={{ animation: "fadeIn .3s ease" }}>
+            <div style={{ background: C.card, borderRadius: 12, border: "1px solid " + C.border, padding: 20, marginBottom: 16 }}>
+              <h3 style={{ margin: "0 0 3px", fontSize: 13, fontWeight: 700, fontFamily: "'Space Grotesk',sans-serif" }}>Number Frequency (1-49)</h3>
+              <p style={{ margin: "0 0 12px", fontSize: 10, color: C.dim }}>Expected: {expFreq.toFixed(1)} | Orange = hot | Red = cold</p>
+              <ResponsiveContainer width="100%" height={250}>
+                <BarChart data={freq.slice().sort(function(a, b) { return a.number - b.number; })} margin={{ top: 5, right: 5, bottom: 5, left: 0 }}>
+                  <XAxis dataKey="number" tick={{ fontSize: 8, fill: C.dim }} interval={1} />
+                  <YAxis tick={{ fontSize: 9, fill: C.dim }} />
+                  <Tooltip contentStyle={ttStyle} />
+                  <Bar dataKey="count" radius={[2, 2, 0, 0]}>
+                    {freq.slice().sort(function(a, b) { return a.number - b.number; }).map(function(e, i) { return <Cell key={i} fill={e.count >= expFreq * 1.3 ? C.acc : e.count <= expFreq * 0.5 ? C.acc4 : C.acc2 + "77"} />; })}
+                  </Bar>
+                </BarChart>
+              </ResponsiveContainer>
+            </div>
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12, marginBottom: 16 }}>
+              {[{title:"Hot Numbers",color:C.acc,data:freq.slice().sort(function(a,b){return b.count-a.count;}).slice(0,10)},
+                {title:"Cold Numbers",color:C.acc2,data:freq.slice().sort(function(a,b){return a.count-b.count;}).slice(0,10)}].map(function(sec) {
+                return <div key={sec.title} style={{ background: C.card, borderRadius: 12, border: "1px solid " + C.border, padding: 20 }}>
+                  <h4 style={{ margin: "0 0 10px", fontSize: 12, color: sec.color }}>{sec.title}</h4>
+                  <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
+                    {sec.data.map(function(f) { return <div key={f.number} style={{ padding: "5px 11px", borderRadius: 6, background: sec.color + "15", border: "1px solid " + sec.color + "33", fontSize: 12 }}>
+                      <span style={{ fontWeight: 800, color: sec.color }}>{f.number}</span>
+                      <span style={{ color: C.dim, fontSize: 9, marginLeft: 5 }}>x{f.count}</span>
+                    </div>; })}
+                  </div>
+                </div>;
+              })}
+            </div>
+            <div style={{ background: C.card, borderRadius: 12, border: "1px solid " + C.border, padding: 20, marginBottom: 16 }}>
+              <h3 style={{ margin: "0 0 10px", fontSize: 13, fontWeight: 700, fontFamily: "'Space Grotesk',sans-serif" }}>Range Distribution</h3>
+              <ResponsiveContainer width="100%" height={180}>
+                <BarChart data={rangeData} margin={{ top: 5, right: 5, bottom: 5, left: 0 }}>
+                  <XAxis dataKey="range" tick={{ fontSize: 10, fill: C.dim }} />
+                  <YAxis tick={{ fontSize: 9, fill: C.dim }} />
+                  <Tooltip contentStyle={ttStyle} />
+                  <Bar dataKey="count" fill={C.acc} radius={[3, 3, 0, 0]} name="Actual" />
+                  <Bar dataKey="expected" fill={C.acc2 + "55"} radius={[3, 3, 0, 0]} name="Expected" />
+                  <Legend wrapperStyle={{ fontSize: 10 }} />
+                </BarChart>
+              </ResponsiveContainer>
+            </div>
+            <div style={{ background: C.card, borderRadius: 12, border: "1px solid " + C.border, padding: 20 }}>
+              <h3 style={{ margin: "0 0 10px", fontSize: 13, fontWeight: 700, fontFamily: "'Space Grotesk',sans-serif" }}>Overdue Numbers</h3>
+              <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
+                {gapData.slice(0, 15).map(function(g) { return <div key={g.number} style={{ padding: "5px 11px", borderRadius: 6, background: g.gap > 15 ? C.acc4 + "18" : C.srf, border: "1px solid " + (g.gap > 15 ? C.acc4 + "44" : C.border), fontSize: 11 }}>
+                  <span style={{ fontWeight: 800, color: g.gap > 15 ? C.acc4 : C.txt }}>{g.number}</span>
+                  <span style={{ color: C.dim, fontSize: 9, marginLeft: 6 }}>{g.gap} draws ago</span>
+                </div>; })}
+              </div>
+            </div>
+          </div>
+        )}
+
+        {tab === "patterns" && (
+          <div style={{ animation: "fadeIn .3s ease" }}>
+            <div style={{ background: C.card, borderRadius: 12, border: "1px solid " + C.border, padding: 20, marginBottom: 16 }}>
+              <h3 style={{ margin: "0 0 3px", fontSize: 13, fontWeight: 700, fontFamily: "'Space Grotesk',sans-serif" }}>Odd/Even Split (last 40)</h3>
+              <ResponsiveContainer width="100%" height={200}>
+                <BarChart data={oddEvenData.slice(-40)} margin={{ top: 5, right: 5, bottom: 5, left: 0 }}>
+                  <XAxis dataKey="date" tick={{ fontSize: 8, fill: C.dim }} interval={2} />
+                  <YAxis domain={[0, 6]} tick={{ fontSize: 9, fill: C.dim }} />
+                  <Tooltip contentStyle={ttStyle} />
+                  <Bar dataKey="odd" stackId="a" fill={C.acc3} name="Odd" />
+                  <Bar dataKey="even" stackId="a" fill={C.acc2} name="Even" radius={[3, 3, 0, 0]} />
+                  <Legend wrapperStyle={{ fontSize: 10 }} />
+                </BarChart>
+              </ResponsiveContainer>
+            </div>
+            <div style={{ background: C.card, borderRadius: 12, border: "1px solid " + C.border, padding: 20, marginBottom: 16 }}>
+              <h3 style={{ margin: "0 0 12px", fontSize: 13, fontWeight: 700, fontFamily: "'Space Grotesk',sans-serif" }}>Sum Trend + 10-Draw MA</h3>
+              <ResponsiveContainer width="100%" height={220}>
+                <ComposedChart data={movAvg} margin={{ top: 5, right: 5, bottom: 5, left: 0 }}>
+                  <XAxis dataKey="date" tick={{ fontSize: 7, fill: C.dim }} interval={Math.floor(filtered.length / 12)} />
+                  <YAxis domain={[60, 240]} tick={{ fontSize: 9, fill: C.dim }} />
+                  <Tooltip contentStyle={ttStyle} />
+                  <Area type="monotone" dataKey="sum" fill={C.acc + "15"} stroke={C.acc + "55"} strokeWidth={1} dot={false} name="Sum" />
+                  <Line type="monotone" dataKey="ma" stroke={C.acc2} strokeWidth={2} dot={false} name="10-draw MA" connectNulls={false} />
+                  <Legend wrapperStyle={{ fontSize: 10 }} />
+                </ComposedChart>
+              </ResponsiveContainer>
+            </div>
+            <div style={{ background: C.card, borderRadius: 12, border: "1px solid " + C.border, padding: 20, marginBottom: 16 }}>
+              <h3 style={{ margin: "0 0 12px", fontSize: 13, fontWeight: 700, fontFamily: "'Space Grotesk',sans-serif" }}>Consecutive Pairs</h3>
+              <ResponsiveContainer width="100%" height={160}>
+                <BarChart data={consData.slice(-40)} margin={{ top: 5, right: 5, bottom: 5, left: 0 }}>
+                  <XAxis dataKey="date" tick={{ fontSize: 8, fill: C.dim }} interval={2} />
+                  <YAxis domain={[0, 4]} tick={{ fontSize: 9, fill: C.dim }} />
+                  <Tooltip contentStyle={ttStyle} />
+                  <Bar dataKey="consecutive" fill={C.grn} radius={[3, 3, 0, 0]} />
+                </BarChart>
+              </ResponsiveContainer>
+            </div>
+            <div style={{ background: C.card, borderRadius: 12, border: "1px solid " + C.border, padding: 20 }}>
+              <h3 style={{ margin: "0 0 10px", fontSize: 13, fontWeight: 700, fontFamily: "'Space Grotesk',sans-serif" }}>Recurring Pairs (3+)</h3>
+              <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
+                {pairFreq.length === 0 ? <span style={{ color: C.dim, fontSize: 11 }}>None in this window</span> :
+                  pairFreq.map(function(p) { return <div key={p.pair} style={{ padding: "5px 11px", borderRadius: 6, background: p.count >= 4 ? C.acc + "18" : C.srf, border: "1px solid " + (p.count >= 4 ? C.acc + "44" : C.border), fontSize: 11 }}>
+                    <span style={{ fontWeight: 700, color: p.count >= 4 ? C.acc : C.txt }}>{p.pair}</span>
+                    <span style={{ color: C.dim, fontSize: 9, marginLeft: 6 }}>x{p.count}</span>
+                  </div>; })}
+              </div>
+            </div>
+          </div>
+        )}
+
+        {tab === "stats" && (
+          <div style={{ animation: "fadeIn .3s ease" }}>
+            {[
+              { title: "Chi-Square Goodness-of-Fit", color: C.acc, content: (
+                <div style={{ padding: 14, background: C.srf, borderRadius: 8, border: "1px solid " + C.border, fontSize: 12 }}>
+                  <div>H0: All numbers equally likely</div>
+                  <div style={{ margin: "8px 0", borderTop: "1px solid " + C.border, paddingTop: 8 }}>chi-sq = <span style={{ color: C.acc, fontWeight: 700 }}>{chi2.value.toFixed(2)}</span></div>
+                  <div>Critical (a=0.05, df=48) = <span style={{ color: C.acc2 }}>{chi2.critical}</span></div>
+                  <div style={{ marginTop: 8, color: chi2.passes ? C.grn : C.acc4, fontWeight: 700 }}>{chi2.passes ? "PASS -- consistent with fair randomness" : "FAIL -- deviation detected"}</div>
+                </div>
+              )},
+              { title: "Serial Independence", color: C.acc3, content: (
+                <div style={{ padding: 14, background: C.srf, borderRadius: 8, border: "1px solid " + C.border, fontSize: 12 }}>
+                  <div>Avg repeat between draws: <b style={{ color: C.acc }}>{serial.avg.toFixed(3)}</b></div>
+                  <div>Expected if independent: <b style={{ color: C.acc2 }}>{serial.expected.toFixed(3)}</b></div>
+                  <div style={{ marginTop: 8, color: Math.abs(serial.avg - serial.expected) < 0.3 ? C.grn : C.acc4, fontWeight: 700 }}>{Math.abs(serial.avg - serial.expected) < 0.3 ? "Draws appear independent" : "Deviation detected"}</div>
+                </div>
+              )},
+              { title: "Birthday Zone Bias", color: C.acc2, content: (
+                <div>
+                  <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
+                    <div style={{ padding: 14, background: C.srf, borderRadius: 8, border: "1px solid " + C.border, textAlign: "center" }}>
+                      <div style={{ fontSize: 9, color: C.dim, textTransform: "uppercase" }}>Birthday Zone (1-31)</div>
+                      <div style={{ fontSize: 24, fontWeight: 800, color: C.acc3, fontFamily: "'Space Grotesk',sans-serif" }}>{bday.inP}%</div>
+                      <div style={{ fontSize: 10, color: C.dim }}>Expected: {bday.expIn}%</div>
+                    </div>
+                    <div style={{ padding: 14, background: C.srf, borderRadius: 8, border: "1px solid " + C.border, textAlign: "center" }}>
+                      <div style={{ fontSize: 9, color: C.dim, textTransform: "uppercase" }}>High Zone (32-49)</div>
+                      <div style={{ fontSize: 24, fontWeight: 800, color: C.grn, fontFamily: "'Space Grotesk',sans-serif" }}>{bday.outP}%</div>
+                      <div style={{ fontSize: 10, color: C.dim }}>Expected: {bday.expOut}%</div>
+                    </div>
+                  </div>
+                  <p style={{ margin: "10px 0 0", color: C.dim, fontSize: 11 }}>RNG is unbiased. But ~65% of players cluster in 1-31, so 32-49 gives better conditional payouts.</p>
+                </div>
+              )},
+            ].map(function(sec) { return (
+              <div key={sec.title} style={{ background: C.card, borderRadius: 12, border: "1px solid " + C.border, padding: 20, marginBottom: 16 }}>
+                <h3 style={{ margin: "0 0 10px", fontSize: 15, fontWeight: 700, fontFamily: "'Space Grotesk',sans-serif", color: sec.color }}>{sec.title}</h3>
+                {sec.content}
+              </div>
+            ); })}
+          </div>
+        )}
+
+        {tab === "gametheory" && (
+          <div style={{ animation: "fadeIn .3s ease" }}>
+            <div style={{ background: C.card, borderRadius: 12, border: "1px solid " + C.border, padding: 20, marginBottom: 16 }}>
+              <h3 style={{ margin: "0 0 6px", fontSize: 15, fontWeight: 700, fontFamily: "'Space Grotesk',sans-serif", color: C.acc }}>Expected Value</h3>
+              <div style={{ padding: 14, background: C.srf, borderRadius: 8, border: "1px solid " + C.border, fontSize: 12, lineHeight: 1.8 }}>
+                <div>Win probability: <span style={{ color: C.acc, fontWeight: 700 }}>1 in 13,983,816</span></div>
+                <div>EV(jackpot @ $1M): <span style={{ color: C.acc, fontWeight: 700 }}>~$0.07 per $1</span></div>
+                <div>EV(all tiers): <span style={{ color: C.acc, fontWeight: 700 }}>~$0.38-0.42 per $1</span></div>
+                <div style={{ color: C.acc4, fontWeight: 700, marginTop: 6 }}>House edge: ~58-62%</div>
+              </div>
+            </div>
+            <div style={{ background: C.card, borderRadius: 12, border: "1px solid " + C.border, padding: 20, marginBottom: 16 }}>
+              <h3 style={{ margin: "0 0 6px", fontSize: 15, fontWeight: 700, fontFamily: "'Space Grotesk',sans-serif", color: C.acc3 }}>Nash Equilibrium</h3>
+              <p style={{ fontSize: 12, color: C.txt, margin: "6px 0 14px", lineHeight: 1.7 }}>All combos equally probable but not equally profitable. Jackpot splits among co-winners.</p>
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
+                <div style={{ padding: 14, background: C.srf, borderRadius: 8, border: "1px solid " + C.acc4 + "33" }}>
+                  <div style={{ fontSize: 10, color: C.acc4, fontWeight: 700, textTransform: "uppercase", letterSpacing: 1, marginBottom: 6 }}>Popular = Lower EV</div>
+                  <div style={{ fontSize: 11, color: C.dim, lineHeight: 1.6 }}>Birthdays (1-31), patterns, hot numbers. More co-winners.</div>
+                </div>
+                <div style={{ padding: 14, background: C.srf, borderRadius: 8, border: "1px solid " + C.grn + "33" }}>
+                  <div style={{ fontSize: 10, color: C.grn, fontWeight: 700, textTransform: "uppercase", letterSpacing: 1, marginBottom: 6 }}>Contrarian = Higher EV</div>
+                  <div style={{ fontSize: 11, color: C.dim, lineHeight: 1.6 }}>High zone (32-49), non-patterns. Fewer co-winners.</div>
+                </div>
+              </div>
+            </div>
+            <div style={{ background: C.card, borderRadius: 12, border: "1px solid " + C.border, padding: 20, marginBottom: 16 }}>
+              <h3 style={{ margin: "0 0 10px", fontSize: 15, fontWeight: 700, fontFamily: "'Space Grotesk',sans-serif", color: C.acc2 }}>Snowball Timing</h3>
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 10 }}>
+                {[{l:"Base",v:"$1M",d:"Normal pool",c:C.dim,b:C.border},{l:"Sweet Spot",v:"$3-6M",d:"Best EV",c:C.grn,b:C.grn+"33"},{l:"Hype",v:"$10M+",d:"Crowd erodes edge",c:C.acc4,b:C.acc4+"33"}].map(function(x,i) { return (
+                  <div key={i} style={{ padding: 12, background: C.srf, borderRadius: 8, border: "1px solid " + x.b, textAlign: "center" }}>
+                    <div style={{ fontSize: 9, color: x.c, textTransform: "uppercase" }}>{x.l}</div>
+                    <div style={{ fontSize: 15, fontWeight: 700, color: x.c, fontFamily: "'Space Grotesk',sans-serif" }}>{x.v}</div>
+                    <div style={{ fontSize: 9, color: C.dim }}>{x.d}</div>
+                  </div>); })}
+              </div>
+            </div>
+            <div style={{ background: C.card, borderRadius: 12, border: "1px solid " + C.border, padding: 20 }}>
+              <h3 style={{ margin: "0 0 10px", fontSize: 15, fontWeight: 700, fontFamily: "'Space Grotesk',sans-serif", color: C.acc4 }}>Cognitive Biases</h3>
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
+                {[
+                  { b: "Gambler's Fallacy", d: "Cold numbers aren't 'due'. Each draw independent.", c: C.acc4 },
+                  { b: "Hot Hand", d: "Hot streaks aren't predictive. Normal variance.", c: C.acc },
+                  { b: "Birthday Anchoring", d: "~65% cluster in 1-31. High zone is underplayed.", c: C.acc3 },
+                  { b: "Pattern Illusion", d: "Recurring pairs are statistically expected, not signals.", c: C.acc2 },
+                ].map(function(x, i) { return <div key={i} style={{ padding: 13, background: C.srf, borderRadius: 8, border: "1px solid " + x.c + "22" }}>
+                  <div style={{ fontSize: 11, fontWeight: 700, color: x.c, marginBottom: 4 }}>{x.b}</div>
+                  <div style={{ fontSize: 10, color: C.dim, lineHeight: 1.6 }}>{x.d}</div>
+                </div>; })}
+              </div>
+            </div>
+          </div>
+        )}
+
+        {tab === "gen" && (
+          <div style={{ animation: "fadeIn .3s ease" }}>
+            <div style={{ background: C.card, borderRadius: 12, border: "1px solid " + C.border, padding: 20, marginBottom: 16 }}>
+              <h3 style={{ margin: "0 0 4px", fontSize: 15, fontWeight: 700, fontFamily: "'Space Grotesk',sans-serif", color: C.acc }}>Number Generator</h3>
+              <p style={{ fontSize: 11, color: C.dim, margin: "0 0 16px" }}>Same win probability. Different conditional payout.</p>
+              <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(150px,1fr))", gap: 8, marginBottom: 18 }}>
+                {[{id:"contrarian",l:"Contrarian",d:"Cold + high zone"},{id:"balanced",l:"Balanced",d:"Even spread"},{id:"overdue",l:"Overdue",d:"Longest gaps"},{id:"random",l:"Random",d:"Baseline"}].map(function(m) {
+                  return <button key={m.id} onClick={function(){setMode(m.id);}} style={{padding:"9px 12px",border:"1px solid "+(mode===m.id?C.acc:C.border),background:mode===m.id?C.acc+"18":C.srf,color:mode===m.id?C.acc:C.dim,borderRadius:8,cursor:"pointer",textAlign:"left"}}>
+                    <div style={{fontWeight:700,fontSize:11}}>{m.l}</div><div style={{fontSize:9,marginTop:2,opacity:.7}}>{m.d}</div>
+                  </button>;
+                })}
+              </div>
+              <button onClick={generate} style={{ padding: "12px 28px", background: "linear-gradient(135deg," + C.acc + ",#b45309)", color: "#000", fontWeight: 800, fontSize: 14, border: "none", borderRadius: 10, cursor: "pointer", letterSpacing: 1, textTransform: "uppercase" }}>Generate</button>
+              {strat && (
+                <div style={{ marginTop: 20, padding: 16, background: C.srf, borderRadius: 12, border: "1px solid " + C.acc + "33" }}>
+                  <div style={{ display: "flex", gap: 12, justifyContent: "center", marginBottom: 12 }}>
+                    {strat.nums.map(function(x, i) { return <div key={i} style={{ width: 50, height: 50, borderRadius: "50%", display: "flex", alignItems: "center", justifyContent: "center", background: "linear-gradient(135deg," + C.acc + ",#b45309)", color: "#000", fontWeight: 900, fontSize: 18, animation: "popIn .3s ease " + (i * 0.08) + "s both" }}>{x}</div>; })}
+                  </div>
+                  <div style={{ display: "flex", justifyContent: "center", gap: 18, fontSize: 11, color: C.dim, flexWrap: "wrap" }}>
+                    <span>Sum: <b style={{ color: C.txt }}>{strat.sum}</b></span>
+                    <span>O/E: <b style={{ color: C.txt }}>{strat.odd}/{6 - strat.odd}</b></span>
+                    <span>Hi/Lo: <b style={{ color: C.txt }}>{strat.high}/{6 - strat.high}</b></span>
+                  </div>
+                </div>
+              )}
+            </div>
+            <div style={{ padding: 12, background: C.srf, borderRadius: 8, border: "1px solid " + C.acc4 + "33", fontSize: 10, color: C.dim, lineHeight: 1.7 }}>
+              <span style={{ color: C.acc4, fontWeight: 700 }}>Disclaimer:</span> Educational only. Lottery is random. No strategy improves win probability. Please gamble responsibly.
+            </div>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
