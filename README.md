@@ -37,6 +37,37 @@ All TOTO combinations have equal probability (1 in 13,983,816). But they don't h
 - `src/draws.json` — JSON format for the dashboard
 - `scripts/backfill.py` — Utility to extend the dataset
 
+### Adding New Draws
+
+**Option 1 — Manual entry:**
+```bash
+python3 scripts/backfill.py --manual
+# Enter: YYYY-MM-DD n1 n2 n3 n4 n5 n6 additional
+# Example: 2026-03-10 5 12 23 34 41 47 9
+# Type 'done' to finish
+```
+
+**Option 2 — Bulk import from file:**
+```bash
+python3 scripts/backfill.py --import draws.txt
+```
+File format: one draw per line — `YYYY-MM-DD n1 n2 n3 n4 n5 n6 additional`
+
+Both options update `data/draws.csv`. After adding draws, update the dashboard JSON:
+```bash
+python3 -c "
+import csv, json
+rows = list(csv.DictReader(open('data/draws.csv')))
+draws = [{'d':r['date'],'n':sorted([int(r[f'n{i}']) for i in range(1,7)]),'a':int(r['add'])} for r in rows]
+json.dump(draws, open('src/draws.json','w'))
+print(f'Updated {len(draws)} draws')
+"
+```
+
+Then rebuild: `npm run build`
+
+**Re-analysis is instant** — all statistics are computed client-side. Even 500+ draws take milliseconds.
+
 ## Development
 
 ```bash

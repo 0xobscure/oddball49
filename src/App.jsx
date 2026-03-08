@@ -26,15 +26,9 @@ export default function App() {
   var C = theme === "dark" ? DARK : LIGHT;
   var ttStyle = {background:C.card,border:"1px solid "+C.border,borderRadius:8,fontSize:11};
   var _s = useState("overview"), tab = _s[0], setTab = _s[1];
-  var _r = useState("all"), drawRange = _r[0], setDrawRange = _r[1];
-  var _st = useState(null), strat = _st[0], setStrat = _st[1];
-  var _m = useState("contrarian"), mode = _m[0], setMode = _m[1];
+  var _st = useState(null), strats = _st[0], setStrats = _st[1];
 
-  var filtered = useMemo(function() {
-    if (drawRange === "50") return DRAWS.slice(-50);
-    if (drawRange === "20") return DRAWS.slice(-20);
-    return DRAWS;
-  }, [drawRange]);
+  var filtered = DRAWS;
 
   var expFreq = (filtered.length * 6) / TOT;
 
@@ -141,7 +135,7 @@ export default function App() {
     return { inP: (inZ / t * 100).toFixed(1), outP: (outZ / t * 100).toFixed(1), expIn: (31 / 49 * 100).toFixed(1), expOut: (18 / 49 * 100).toFixed(1) };
   }, [filtered]);
 
-  var generate = function() {
+  var pickNums = function(mode) {
     var pool = [];
     var sortedFreq = freq.slice().sort(function(a, b) { return a.count - b.count; });
     var cold = sortedFreq.slice(0, 20).map(function(f) { return f.number; });
@@ -157,11 +151,29 @@ export default function App() {
       while (pool.length < 6) { var x2 = Math.floor(Math.random() * 49) + 1; if (pool.indexOf(x2) === -1) pool.push(x2); }
     } else if (mode === "overdue") {
       while (pool.length < 6) { var p2 = overdue[Math.floor(Math.random() * Math.min(15, overdue.length))]; if (pool.indexOf(p2) === -1) pool.push(p2); }
+    } else if (mode === "hot") {
+      var hotNums = freq.slice().sort(function(a, b) { return b.count - a.count; }).slice(0, 20).map(function(f) { return f.number; });
+      while (pool.length < 6) { var p3 = hotNums[Math.floor(Math.random() * hotNums.length)]; if (pool.indexOf(p3) === -1) pool.push(p3); }
+    } else if (mode === "highzone") {
+      var hiPool = []; for (var h = 32; h <= 49; h++) hiPool.push(h);
+      while (pool.length < 4) { var p4 = hiPool[Math.floor(Math.random() * hiPool.length)]; if (pool.indexOf(p4) === -1) pool.push(p4); }
+      while (pool.length < 6) { var x4 = Math.floor(Math.random() * 49) + 1; if (pool.indexOf(x4) === -1) pool.push(x4); }
     } else {
       while (pool.length < 6) { var x3 = Math.floor(Math.random() * 49) + 1; if (pool.indexOf(x3) === -1) pool.push(x3); }
     }
     pool.sort(function(a, b) { return a - b; });
-    setStrat({ nums: pool, sum: pool.reduce(function(a, b) { return a + b; }, 0), odd: pool.filter(function(x) { return x % 2 !== 0; }).length, high: pool.filter(function(x) { return x > 31; }).length, mode: mode });
+    return { nums: pool, sum: pool.reduce(function(a, b) { return a + b; }, 0), odd: pool.filter(function(x) { return x % 2 !== 0; }).length, high: pool.filter(function(x) { return x > 31; }).length, mode: mode };
+  };
+
+  var generateAll = function() {
+    setStrats([
+      pickNums("contrarian"),
+      pickNums("balanced"),
+      pickNums("overdue"),
+      pickNums("hot"),
+      pickNums("highzone"),
+      pickNums("random"),
+    ]);
   };
 
   var tabs = [
@@ -193,17 +205,10 @@ export default function App() {
 
       {/* TABS */}
       <div style={{ padding: "0 20px", borderBottom: "1px solid " + C.border, background: C.card + "90", position: "sticky", top: 0, zIndex: 10 }}>
-        <div style={{ maxWidth: 1100, margin: "0 auto", display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 4 }}>
-          <div style={{ display: "flex", gap: 0, overflowX: "auto" }}>
+        <div style={{ maxWidth: 1100, margin: "0 auto", display: "flex", overflowX: "auto" }}>
             {tabs.map(function(t) {
               return <button key={t.id} onClick={function() { setTab(t.id); }} style={{ padding: "11px 14px", background: "none", border: "none", color: tab === t.id ? C.acc : C.dim, fontWeight: tab === t.id ? 700 : 400, fontSize: 11, cursor: "pointer", borderBottom: tab === t.id ? "2px solid " + C.acc : "2px solid transparent", fontFamily: "inherit", whiteSpace: "nowrap" }}>{t.label}</button>;
             })}
-          </div>
-          <div style={{ display: "flex", gap: 3 }}>
-            {[["all", "All"], ["50", "50"], ["20", "20"]].map(function(item) {
-              return <button key={item[0]} onClick={function() { setDrawRange(item[0]); }} style={{ padding: "4px 9px", fontSize: 9, fontWeight: 600, border: "1px solid " + (drawRange === item[0] ? C.acc2 : C.border), background: drawRange === item[0] ? C.acc2 + "20" : "transparent", color: drawRange === item[0] ? C.acc2 : C.dim, borderRadius: 5, cursor: "pointer", fontFamily: "inherit" }}>{item[1]}</button>;
-            })}
-          </div>
         </div>
       </div>
 
@@ -214,7 +219,7 @@ export default function App() {
           <div style={{ animation: "fadeIn .3s ease" }}>
             <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(140px,1fr))", gap: 10, marginBottom: 18 }}>
               {[
-                { l: "Total Draws", v: filtered.length, s: (drawRange === "all" ? "All" : drawRange) + " draws" },
+                { l: "Total Draws", v: filtered.length, s: "All draws" },
                 { l: "Numbers Drawn", v: filtered.length * 6, s: "6 per draw" },
                 { l: "Unique", v: freq.filter(function(f) { return f.count > 0; }).length, s: "of 49" },
                 { l: "Expected Freq", v: expFreq.toFixed(1), s: "per number" },
@@ -459,25 +464,29 @@ export default function App() {
           <div style={{ animation: "fadeIn .3s ease" }}>
             <div style={{ background: C.card, borderRadius: 12, border: "1px solid " + C.border, padding: 20, marginBottom: 16 }}>
               <h3 style={{ margin: "0 0 4px", fontSize: 15, fontWeight: 700, fontFamily: "'Space Grotesk',sans-serif", color: C.acc }}>Number Generator</h3>
-              <p style={{ fontSize: 11, color: C.dim, margin: "0 0 16px" }}>Same win probability. Different conditional payout.</p>
-              <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(150px,1fr))", gap: 8, marginBottom: 18 }}>
-                {[{id:"contrarian",l:"Contrarian",d:"Cold + high zone"},{id:"balanced",l:"Balanced",d:"Even spread"},{id:"overdue",l:"Overdue",d:"Longest gaps"},{id:"random",l:"Random",d:"Baseline"}].map(function(m) {
-                  return <button key={m.id} onClick={function(){setMode(m.id);}} style={{padding:"9px 12px",border:"1px solid "+(mode===m.id?C.acc:C.border),background:mode===m.id?C.acc+"18":C.srf,color:mode===m.id?C.acc:C.dim,borderRadius:8,cursor:"pointer",textAlign:"left"}}>
-                    <div style={{fontWeight:700,fontSize:11}}>{m.l}</div><div style={{fontSize:9,marginTop:2,opacity:.7}}>{m.d}</div>
-                  </button>;
-                })}
-              </div>
-              <button onClick={generate} style={{ padding: "12px 28px", background: "linear-gradient(135deg," + C.acc + ",#b45309)", color: "#000", fontWeight: 800, fontSize: 14, border: "none", borderRadius: 10, cursor: "pointer", letterSpacing: 1, textTransform: "uppercase" }}>Generate</button>
-              {strat && (
-                <div style={{ marginTop: 20, padding: 16, background: C.srf, borderRadius: 12, border: "1px solid " + C.acc + "33" }}>
-                  <div style={{ display: "flex", gap: 12, justifyContent: "center", marginBottom: 12 }}>
-                    {strat.nums.map(function(x, i) { return <div key={i} style={{ width: 50, height: 50, borderRadius: "50%", display: "flex", alignItems: "center", justifyContent: "center", background: "linear-gradient(135deg," + C.acc + ",#b45309)", color: "#000", fontWeight: 900, fontSize: 18, animation: "popIn .3s ease " + (i * 0.08) + "s both" }}>{x}</div>; })}
-                  </div>
-                  <div style={{ display: "flex", justifyContent: "center", gap: 18, fontSize: 11, color: C.dim, flexWrap: "wrap" }}>
-                    <span>Sum: <b style={{ color: C.txt }}>{strat.sum}</b></span>
-                    <span>O/E: <b style={{ color: C.txt }}>{strat.odd}/{6 - strat.odd}</b></span>
-                    <span>Hi/Lo: <b style={{ color: C.txt }}>{strat.high}/{6 - strat.high}</b></span>
-                  </div>
+              <p style={{ fontSize: 11, color: C.dim, margin: "0 0 16px" }}>One click, six strategies. Same win probability — different conditional payout.</p>
+              <button onClick={generateAll} style={{ padding: "12px 28px", background: "linear-gradient(135deg," + C.acc + ",#b45309)", color: "#000", fontWeight: 800, fontSize: 14, border: "none", borderRadius: 10, cursor: "pointer", letterSpacing: 1, textTransform: "uppercase" }}>Generate All</button>
+              {strats && (
+                <div style={{ marginTop: 20, display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(280px,1fr))", gap: 12 }}>
+                  {[{id:"contrarian",l:"Contrarian",d:"Cold + high zone",c:C.acc},{id:"balanced",l:"Balanced",d:"Even spread across ranges",c:C.acc2},{id:"overdue",l:"Overdue",d:"Longest gaps since drawn",c:C.acc3},{id:"hot",l:"Hot Streak",d:"Most frequent numbers",c:C.acc4},{id:"highzone",l:"High Zone",d:"Anti-birthday bias (32-49)",c:C.grn},{id:"random",l:"Random",d:"Uniform baseline",c:C.dim}].map(function(meta, idx) {
+                    var s = strats[idx];
+                    return <div key={meta.id} style={{ padding: 16, background: C.srf, borderRadius: 12, border: "1px solid " + meta.c + "33" }}>
+                      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 10 }}>
+                        <div>
+                          <div style={{ fontWeight: 700, fontSize: 12, color: meta.c }}>{meta.l}</div>
+                          <div style={{ fontSize: 9, color: C.dim, marginTop: 2 }}>{meta.d}</div>
+                        </div>
+                      </div>
+                      <div style={{ display: "flex", gap: 6, marginBottom: 8 }}>
+                        {s.nums.map(function(x, i) { return <div key={i} style={{ width: 38, height: 38, borderRadius: "50%", display: "flex", alignItems: "center", justifyContent: "center", background: meta.c + "20", color: meta.c, fontWeight: 900, fontSize: 14, border: "1px solid " + meta.c + "44", animation: "popIn .3s ease " + (i * 0.05 + idx * 0.05) + "s both" }}>{x}</div>; })}
+                      </div>
+                      <div style={{ display: "flex", gap: 12, fontSize: 9, color: C.dim }}>
+                        <span>Sum: <b style={{ color: C.txt }}>{s.sum}</b></span>
+                        <span>O/E: <b style={{ color: C.txt }}>{s.odd}/{6 - s.odd}</b></span>
+                        <span>Hi/Lo: <b style={{ color: C.txt }}>{s.high}/{6 - s.high}</b></span>
+                      </div>
+                    </div>;
+                  })}
                 </div>
               )}
             </div>
