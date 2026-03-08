@@ -4,15 +4,17 @@ import DRAWS from "./draws.json";
 
 var TOT = 49;
 
-var C = {
+var DARK = {
   bg:"#06080f", card:"#0d1117", border:"#1b2332", acc:"#e8a838", acc2:"#38bdf8",
   acc3:"#a78bfa", acc4:"#f87171", txt:"#e0e6ed", dim:"#5a6a80", grn:"#34d399", srf:"#131b28"
 };
-
-var ttStyle = {background:C.card,border:"1px solid "+C.border,borderRadius:8,fontSize:11};
+var LIGHT = {
+  bg:"#f5f6fa", card:"#ffffff", border:"#e0e3ea", acc:"#b47a1a", acc2:"#0c7abf",
+  acc3:"#7c5cbf", acc4:"#d94444", txt:"#1a1d26", dim:"#6b7280", grn:"#1a9a6a", srf:"#eef0f4"
+};
 
 function NumberBall(props) {
-  var num = props.num;
+  var num = props.num; var C = props.C;
   var col = num<=10?C.acc2:num<=20?C.acc3:num<=30?C.grn:num<=40?C.acc:C.acc4;
   return (
     <span style={{display:"inline-flex",width:24,height:24,borderRadius:"50%",alignItems:"center",justifyContent:"center",background:col+"20",color:col,fontSize:10,fontWeight:700}}>{num}</span>
@@ -20,6 +22,9 @@ function NumberBall(props) {
 }
 
 export default function App() {
+  var _th = useState("dark"), theme = _th[0], setTheme = _th[1];
+  var C = theme === "dark" ? DARK : LIGHT;
+  var ttStyle = {background:C.card,border:"1px solid "+C.border,borderRadius:8,fontSize:11};
   var _s = useState("overview"), tab = _s[0], setTab = _s[1];
   var _r = useState("all"), drawRange = _r[0], setDrawRange = _r[1];
   var _st = useState(null), strat = _st[0], setStrat = _st[1];
@@ -176,7 +181,8 @@ export default function App() {
         <div style={{ maxWidth: 1100, margin: "0 auto" }}>
           <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 5 }}>
             <span style={{ fontSize: 22 }}>🎱</span>
-            <span style={{ fontSize: 10, color: C.acc, letterSpacing: 3, textTransform: "uppercase", fontWeight: 700 }}>The Numbers Nobody Picks</span>
+            <span style={{ fontSize: 10, color: C.acc, letterSpacing: 3, textTransform: "uppercase", fontWeight: 700, flex: 1 }}>The Numbers Nobody Picks</span>
+            <button onClick={function(){setTheme(theme==="dark"?"light":"dark");}} style={{background:C.srf,border:"1px solid "+C.border,borderRadius:8,padding:"6px 10px",cursor:"pointer",fontSize:16,lineHeight:1,color:C.txt}}>{theme==="dark"?"☀️":"🌙"}</button>
           </div>
           <h1 style={{ fontSize: 26, fontWeight: 800, margin: 0, fontFamily: "'Space Grotesk',sans-serif", background: "linear-gradient(135deg," + C.txt + "," + C.acc + ")", WebkitBackgroundClip: "text", WebkitTextFillColor: "transparent" }}>
             Oddball49
@@ -234,7 +240,7 @@ export default function App() {
                   <tbody>{filtered.slice().reverse().map(function(dr, i) { return (
                     <tr key={i} style={{ borderTop: "1px solid " + C.border + "22" }}>
                       <td style={{ padding: "6px 10px", color: C.dim, fontSize: 10 }}>{dr.d}</td>
-                      <td style={{ padding: "6px 10px" }}><div style={{ display: "flex", gap: 3 }}>{dr.n.map(function(x) { return <NumberBall key={x} num={x} />; })}</div></td>
+                      <td style={{ padding: "6px 10px" }}><div style={{ display: "flex", gap: 3 }}>{dr.n.map(function(x) { return <NumberBall key={x} num={x} C={C} />; })}</div></td>
                       <td style={{ padding: "6px 10px", color: C.dim, fontSize: 10 }}>{dr.a}</td>
                       <td style={{ padding: "6px 10px", fontWeight: 600, fontSize: 10 }}>{dr.n.reduce(function(a, b) { return a + b; }, 0)}</td>
                       <td style={{ padding: "6px 10px", color: C.dim, fontSize: 10 }}>{dr.n.filter(function(x) { return x % 2 !== 0; }).length}/{dr.n.filter(function(x) { return x % 2 === 0; }).length}</td>
