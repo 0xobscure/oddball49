@@ -123,7 +123,12 @@ export default function App() {
       filtered[i - 1].n.forEach(function(x) { prev[x] = true; });
       filtered[i].n.forEach(function(x) { if (prev[x]) tot++; });
     }
-    return { avg: tot / (filtered.length - 1), expected: 6 * 6 / 49 };
+    var mean = tot / (filtered.length - 1);
+    var exp = 6 * 6 / 49;
+    var variance = 6 * 6 * 43 * 43 / (49 * 49 * 48);
+    var se = Math.sqrt(variance / (filtered.length - 1));
+    var z = Math.abs(mean - exp) / se;
+    return { avg: mean, expected: exp, z: z, passes: z < 1.96 };
   }, [filtered]);
 
   var bday = useMemo(function() {
@@ -327,7 +332,8 @@ export default function App() {
               </ResponsiveContainer>
             </div>
             <div style={{ background: C.card, borderRadius: 12, border: "1px solid " + C.border, padding: 20, marginBottom: 16 }}>
-              <h3 style={{ margin: "0 0 12px", fontSize: 13, fontWeight: 700, fontFamily: "'Space Grotesk',sans-serif" }}>Sum Trend + 10-Draw MA</h3>
+              <h3 style={{ margin: "0 0 3px", fontSize: 13, fontWeight: 700, fontFamily: "'Space Grotesk',sans-serif" }}>Sum Trend + 10-Draw MA</h3>
+              <p style={{ margin: "0 0 10px", fontSize: 9, color: C.dim }}>Smoothing visualization only. Draws are independent — apparent trends are noise.</p>
               <ResponsiveContainer width="100%" height={220}>
                 <ComposedChart data={movAvg} margin={{ top: 5, right: 5, bottom: 5, left: 0 }}>
                   <XAxis dataKey="date" tick={{ fontSize: 7, fill: C.dim }} interval={Math.floor(filtered.length / 12)} />
@@ -378,7 +384,8 @@ export default function App() {
                 <div style={{ padding: 14, background: C.srf, borderRadius: 8, border: "1px solid " + C.border, fontSize: 12 }}>
                   <div>Avg repeat between draws: <b style={{ color: C.acc }}>{serial.avg.toFixed(3)}</b></div>
                   <div>Expected if independent: <b style={{ color: C.acc2 }}>{serial.expected.toFixed(3)}</b></div>
-                  <div style={{ marginTop: 8, color: Math.abs(serial.avg - serial.expected) < 0.3 ? C.grn : C.acc4, fontWeight: 700 }}>{Math.abs(serial.avg - serial.expected) < 0.3 ? "Draws appear independent" : "Deviation detected"}</div>
+                  <div style={{ margin: "8px 0", borderTop: "1px solid " + C.border, paddingTop: 8 }}>z-score = <span style={{ color: C.acc, fontWeight: 700 }}>{serial.z.toFixed(2)}</span> <span style={{ color: C.dim, fontSize: 10 }}>(critical: 1.96 at a=0.05)</span></div>
+                  <div style={{ marginTop: 4, color: serial.passes ? C.grn : C.acc4, fontWeight: 700 }}>{serial.passes ? "PASS -- draws appear independent" : "FAIL -- deviation detected"}</div>
                 </div>
               )},
               { title: "Birthday Zone Bias", color: C.acc2, content: (
@@ -395,7 +402,7 @@ export default function App() {
                       <div style={{ fontSize: 10, color: C.dim }}>Expected: {bday.expOut}%</div>
                     </div>
                   </div>
-                  <p style={{ margin: "10px 0 0", color: C.dim, fontSize: 11 }}>RNG is unbiased. But ~65% of players cluster in 1-31, so 32-49 gives better conditional payouts.</p>
+                  <p style={{ margin: "10px 0 0", color: C.dim, fontSize: 11 }}>RNG is unbiased. But lottery research (UK 6/49, Dutch Lotto) shows player selections disproportionately cluster in 1-31 due to birthday anchoring, so 32-49 gives better conditional payouts.</p>
                 </div>
               )},
             ].map(function(sec) { return (
@@ -414,8 +421,9 @@ export default function App() {
               <div style={{ padding: 14, background: C.srf, borderRadius: 8, border: "1px solid " + C.border, fontSize: 12, lineHeight: 1.8 }}>
                 <div>Win probability: <span style={{ color: C.acc, fontWeight: 700 }}>1 in 13,983,816</span></div>
                 <div>EV(jackpot @ $1M): <span style={{ color: C.acc, fontWeight: 700 }}>~$0.07 per $1</span></div>
-                <div>EV(all tiers): <span style={{ color: C.acc, fontWeight: 700 }}>~$0.38-0.42 per $1</span></div>
-                <div style={{ color: C.acc4, fontWeight: 700, marginTop: 6 }}>House edge: ~58-62%</div>
+                <div>EV(all tiers): <span style={{ color: C.acc, fontWeight: 700 }}>~$0.42-0.50 per $1</span></div>
+                <div style={{ fontSize: 10, color: C.dim, marginTop: 2 }}>Singapore Pools allocates 54% to prize pool; rollovers reduce per-draw payout</div>
+                <div style={{ color: C.acc4, fontWeight: 700, marginTop: 6 }}>House edge: ~50-58%</div>
               </div>
             </div>
             <div style={{ background: C.card, borderRadius: 12, border: "1px solid " + C.border, padding: 20, marginBottom: 16 }}>
@@ -433,9 +441,10 @@ export default function App() {
               </div>
             </div>
             <div style={{ background: C.card, borderRadius: 12, border: "1px solid " + C.border, padding: 20, marginBottom: 16 }}>
-              <h3 style={{ margin: "0 0 10px", fontSize: 15, fontWeight: 700, fontFamily: "'Space Grotesk',sans-serif", color: C.acc2 }}>Snowball Timing</h3>
+              <h3 style={{ margin: "0 0 3px", fontSize: 15, fontWeight: 700, fontFamily: "'Space Grotesk',sans-serif", color: C.acc2 }}>Snowball Timing</h3>
+              <p style={{ margin: "0 0 10px", fontSize: 9, color: C.dim }}>Qualitative reasoning — exact thresholds depend on ticket sales data which is not public.</p>
               <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 10 }}>
-                {[{l:"Base",v:"$1M",d:"Normal pool",c:C.dim,b:C.border},{l:"Sweet Spot",v:"$3-6M",d:"Best EV",c:C.grn,b:C.grn+"33"},{l:"Hype",v:"$10M+",d:"Crowd erodes edge",c:C.acc4,b:C.acc4+"33"}].map(function(x,i) { return (
+                {[{l:"Base",v:"$1M",d:"Low jackpot, low EV",c:C.dim,b:C.border},{l:"Moderate",v:"$3-6M",d:"Higher EV, fewer players",c:C.grn,b:C.grn+"33"},{l:"Hype",v:"$10M+",d:"Media drives ticket surge, more co-winners",c:C.acc4,b:C.acc4+"33"}].map(function(x,i) { return (
                   <div key={i} style={{ padding: 12, background: C.srf, borderRadius: 8, border: "1px solid " + x.b, textAlign: "center" }}>
                     <div style={{ fontSize: 9, color: x.c, textTransform: "uppercase" }}>{x.l}</div>
                     <div style={{ fontSize: 15, fontWeight: 700, color: x.c, fontFamily: "'Space Grotesk',sans-serif" }}>{x.v}</div>
@@ -449,7 +458,7 @@ export default function App() {
                 {[
                   { b: "Gambler's Fallacy", d: "Cold numbers aren't 'due'. Each draw independent.", c: C.acc4 },
                   { b: "Hot Hand", d: "Hot streaks aren't predictive. Normal variance.", c: C.acc },
-                  { b: "Birthday Anchoring", d: "~65% cluster in 1-31. High zone is underplayed.", c: C.acc3 },
+                  { b: "Birthday Anchoring", d: "Studies show player selections cluster in 1-31. High zone is underplayed.", c: C.acc3 },
                   { b: "Pattern Illusion", d: "Recurring pairs are statistically expected, not signals.", c: C.acc2 },
                 ].map(function(x, i) { return <div key={i} style={{ padding: 13, background: C.srf, borderRadius: 8, border: "1px solid " + x.c + "22" }}>
                   <div style={{ fontSize: 11, fontWeight: 700, color: x.c, marginBottom: 4 }}>{x.b}</div>
@@ -468,7 +477,7 @@ export default function App() {
               <button onClick={generateAll} style={{ padding: "12px 28px", background: "linear-gradient(135deg," + C.acc + ",#b45309)", color: "#000", fontWeight: 800, fontSize: 14, border: "none", borderRadius: 10, cursor: "pointer", letterSpacing: 1, textTransform: "uppercase" }}>Generate All</button>
               {strats && (
                 <div style={{ marginTop: 20, display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(280px,1fr))", gap: 12 }}>
-                  {[{id:"contrarian",l:"Contrarian",d:"Cold + high zone",c:C.acc},{id:"balanced",l:"Balanced",d:"Even spread across ranges",c:C.acc2},{id:"overdue",l:"Overdue",d:"Longest gaps since drawn",c:C.acc3},{id:"hot",l:"Hot Streak",d:"Most frequent numbers",c:C.acc4},{id:"highzone",l:"High Zone",d:"Anti-birthday bias (32-49)",c:C.grn},{id:"random",l:"Random",d:"Uniform baseline",c:C.dim}].map(function(meta, idx) {
+                  {[{id:"contrarian",l:"Contrarian",d:"Cold + high zone",c:C.acc},{id:"balanced",l:"Balanced",d:"Even spread across ranges",c:C.acc2},{id:"overdue",l:"Overdue",d:"Longest gaps since drawn",c:C.acc3},{id:"hot",l:"Popular",d:"Most picked numbers (higher co-winner risk)",c:C.acc4},{id:"highzone",l:"High Zone",d:"Anti-birthday bias (32-49)",c:C.grn},{id:"random",l:"Random",d:"Uniform baseline",c:C.dim}].map(function(meta, idx) {
                     var s = strats[idx];
                     return <div key={meta.id} style={{ padding: 16, background: C.srf, borderRadius: 12, border: "1px solid " + meta.c + "33" }}>
                       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 10 }}>
