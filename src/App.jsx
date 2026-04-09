@@ -27,6 +27,7 @@ export default function App() {
   var ttStyle = {background:C.card,border:"1px solid "+C.border,borderRadius:8,fontSize:11};
   var _s = useState("overview"), tab = _s[0], setTab = _s[1];
   var _st = useState(null), strats = _st[0], setStrats = _st[1];
+  var _jk = useState("moderate"), jackpot = _jk[0], setJackpot = _jk[1];
 
   var filtered = DRAWS;
 
@@ -140,6 +141,27 @@ export default function App() {
     return { inP: (inZ / t * 100).toFixed(1), outP: (outZ / t * 100).toFixed(1), expIn: (31 / 49 * 100).toFixed(1), expOut: (18 / 49 * 100).toFixed(1) };
   }, [filtered]);
 
+  var sumStats = useMemo(function() {
+    var sums = filtered.map(function(dr) { return dr.n.reduce(function(a,b){return a+b;},0); }).sort(function(a,b){return a-b;});
+    return {
+      mean: Math.round(sums.reduce(function(a,b){return a+b;},0)/sums.length),
+      p25: sums[Math.floor(sums.length*0.25)],
+      p75: sums[Math.floor(sums.length*0.75)]
+    };
+  }, [filtered]);
+
+  var hotPairSet = useMemo(function() {
+    var s = {};
+    pairFreq.forEach(function(p) { s[p.pair] = p.count; });
+    return s;
+  }, [pairFreq]);
+
+  var recentOddAvg = useMemo(function() {
+    var recent = filtered.slice(-20);
+    if (!recent.length) return 3;
+    return recent.reduce(function(s,dr){return s+dr.n.filter(function(x){return x%2!==0;}).length;},0)/recent.length;
+  }, [filtered]);
+
   var pickNums = function(mode) {
     var pool = [];
     var sortedFreq = freq.slice().sort(function(a, b) { return a.count - b.count; });
@@ -149,7 +171,20 @@ export default function App() {
       var hi = cold.filter(function(x) { return x > 31; });
       var lo = cold.filter(function(x) { return x <= 31; });
       var all = hi.concat(lo);
-      while (pool.length < 6) { var p = all[Math.floor(Math.random() * all.length)]; if (pool.indexOf(p) === -1) pool.push(p); }
+      var att0 = 0;
+      while (pool.length < 6 && att0 < 500) {
+        att0++;
+        var p = all[Math.floor(Math.random() * all.length)];
+        if (pool.indexOf(p) !== -1) continue;
+        var bad = false;
+        for (var qi = 0; qi < pool.length; qi++) {
+          var qk = pool[qi] < p ? pool[qi]+"-"+p : p+"-"+pool[qi];
+          if (hotPairSet[qk]) { bad = true; break; }
+        }
+        if (!bad) pool.push(p);
+      }
+      // fallback if pair avoidance is too tight
+      while (pool.length < 6) { var fp = all[Math.floor(Math.random() * all.length)]; if (pool.indexOf(fp) === -1) pool.push(fp); }
     } else if (mode === "balanced") {
       var buckets = [[1,10],[11,20],[21,30],[31,40],[41,49]]; var picks = [1,1,1,1,2]; var t = 0;
       buckets.forEach(function(b, i) { var nd = picks[i]; while (nd > 0 && t < 6) { var x = Math.floor(Math.random() * (b[1] - b[0] + 1)) + b[0]; if (pool.indexOf(x) === -1) { pool.push(x); nd--; t++; } } });
@@ -165,33 +200,56 @@ export default function App() {
       while (pool.length < 6) { var x4 = Math.floor(Math.random() * 49) + 1; if (pool.indexOf(x4) === -1) pool.push(x4); }
     } else if (mode === "composite") {
       // Composite Contrarian: stack all game theory edges
-      // 1. Build candidate pool: non-round, non-hot numbers weighted toward high zone
+      // 1. Build candidate pool: non-round, non-hot, weighted high zone + live odd/even bias
       var roundNums = {10:1,20:1,30:1,40:1,5:1,15:1,25:1,35:1,45:1};
       var hotSet = {};
       freq.slice().sort(function(a,b){return b.count-a.count;}).slice(0,10).forEach(function(f){hotSet[f.number]=1;});
       var candidates = [];
       for (var ci = 1; ci <= 49; ci++) {
         if (roundNums[ci] || hotSet[ci]) continue;
-        // Weight high zone (32-49) 3x more likely to be in candidate pool
         candidates.push(ci);
+        // High zone 3x weight (birthday bias edge)
         if (ci > 31) { candidates.push(ci); candidates.push(ci); }
+        // Odd/even bias: if recent draws lean odd (avg>3.2), double-weight even numbers
+        // if recent draws lean even (avg<2.8), double-weight odd numbers
+        if (recentOddAvg > 3.2 && ci % 2 === 0) candidates.push(ci);
+        if (recentOddAvg < 2.8 && ci % 2 !== 0) candidates.push(ci);
       }
-      // 2. Pick with minimum gap enforcement (spread >= 5 between numbers)
+      // 2. Pick with min gap + hot-pair avoidance
       var attempts = 0;
-      while (pool.length < 6 && attempts < 500) {
-        var c = candidates[Math.floor(Math.random() * candidates.length)];
-        var tooClose = false;
-        for (var gi = 0; gi < pool.length; gi++) { if (Math.abs(pool[gi] - c) < 5) { tooClose = true; break; } }
-        if (!tooClose && pool.indexOf(c) === -1) pool.push(c);
+      while (pool.length < 6 && attempts < 800) {
         attempts++;
+        var c = candidates[Math.floor(Math.random() * candidates.length)];
+        if (pool.indexOf(c) !== -1) continue;
+        var tooClose = false;
+        for (var gi = 0; gi < pool.length; gi++) {
+          if (Math.abs(pool[gi] - c) < 5) { tooClose = true; break; }
+          var ck = pool[gi] < c ? pool[gi]+"-"+c : c+"-"+pool[gi];
+          if (hotPairSet[ck]) { tooClose = true; break; }
+        }
+        if (!tooClose) pool.push(c);
       }
-      // Fallback if spread constraint is too tight
+      // Fallback if constraints are too tight
       while (pool.length < 6) { var cf = Math.floor(Math.random() * 49) + 1; if (pool.indexOf(cf) === -1 && !roundNums[cf]) pool.push(cf); }
     } else {
       while (pool.length < 6) { var x3 = Math.floor(Math.random() * 49) + 1; if (pool.indexOf(x3) === -1) pool.push(x3); }
     }
     pool.sort(function(a, b) { return a - b; });
-    return { nums: pool, sum: pool.reduce(function(a, b) { return a + b; }, 0), odd: pool.filter(function(x) { return x % 2 !== 0; }).length, high: pool.filter(function(x) { return x > 31; }).length, mode: mode };
+    var pSum = pool.reduce(function(a,b){return a+b;},0);
+    var pOdd = pool.filter(function(x){return x%2!==0;}).length;
+    var pHigh = pool.filter(function(x){return x>31;}).length;
+    // Count how many picked pairs appear in hotPairSet
+    var pairRisk = 0;
+    for (var ri = 0; ri < pool.length; ri++)
+      for (var rj = ri+1; rj < pool.length; rj++) {
+        var rk = pool[ri]+"-"+pool[rj];
+        if (hotPairSet[rk]) pairRisk++;
+      }
+    // Sum rating vs historical quartiles
+    var sumRating = pSum < sumStats.p25 ? "rare-low" : pSum > sumStats.p75 ? "rare-high" : "typical";
+    // Co-winner risk based on high zone count + pair risk
+    var coRisk = pHigh >= 3 && pairRisk === 0 ? "low" : pHigh >= 2 && pairRisk <= 1 ? "medium" : "high";
+    return { nums: pool, sum: pSum, odd: pOdd, high: pHigh, mode: mode, pairRisk: pairRisk, sumRating: sumRating, coRisk: coRisk };
   };
 
   var generateAll = function() {
@@ -497,26 +555,74 @@ export default function App() {
           <div style={{ animation: "fadeIn .3s ease" }}>
             <div style={{ background: C.card, borderRadius: 12, border: "1px solid " + C.border, padding: 20, marginBottom: 16 }}>
               <h3 style={{ margin: "0 0 4px", fontSize: 15, fontWeight: 700, fontFamily: "'Space Grotesk',sans-serif", color: C.acc }}>Number Generator</h3>
-              <p style={{ fontSize: 11, color: C.dim, margin: "0 0 16px" }}>One click, six strategies. Same win probability — different conditional payout.</p>
-              <button onClick={generateAll} style={{ padding: "12px 28px", background: "linear-gradient(135deg," + C.acc + ",#b45309)", color: "#000", fontWeight: 800, fontSize: 14, border: "none", borderRadius: 10, cursor: "pointer", letterSpacing: 1, textTransform: "uppercase" }}>Generate All</button>
+              <p style={{ fontSize: 11, color: C.dim, margin: "0 0 14px" }}>Six strategies, same win probability — different conditional payout. Powered by {DRAWS.length} draws of live data.</p>
+
+              {/* Jackpot selector */}
+              <div style={{ marginBottom: 16 }}>
+                <div style={{ fontSize: 9, color: C.dim, textTransform: "uppercase", letterSpacing: 1.5, marginBottom: 6 }}>Current jackpot tier — affects EV rating</div>
+                <div style={{ display: "flex", gap: 8 }}>
+                  {[{id:"low",l:"Base <$2M",d:"Low EV",c:C.dim},{id:"moderate",l:"Moderate $2-6M",d:"Best EV window",c:C.grn},{id:"hype",l:"Hype $6M+",d:"Surge = more co-winners",c:C.acc4}].map(function(jk) {
+                    return <button key={jk.id} onClick={function(){setJackpot(jk.id);}} style={{ padding:"7px 13px", borderRadius:8, border:"1px solid "+(jackpot===jk.id?jk.c:C.border), background:jackpot===jk.id?jk.c+"18":C.srf, color:jackpot===jk.id?jk.c:C.dim, fontSize:10, fontWeight:jackpot===jk.id?700:400, cursor:"pointer", fontFamily:"inherit" }}>
+                      <div style={{ fontWeight:700 }}>{jk.l}</div>
+                      <div style={{ fontSize:8, marginTop:1 }}>{jk.d}</div>
+                    </button>;
+                  })}
+                </div>
+              </div>
+
+              {/* Stats warnings */}
+              {(!chi2.passes || !serial.passes) && (
+                <div style={{ marginBottom: 14, padding:"8px 12px", borderRadius:8, background:C.acc4+"12", border:"1px solid "+C.acc4+"33", fontSize:10, color:C.acc4 }}>
+                  {!chi2.passes && <span>Chi-sq FAIL ({chi2.value.toFixed(1)} &gt; {chi2.critical}) — number distribution shows detectable bias. </span>}
+                  {!serial.passes && <span>Serial independence FAIL (z={serial.z.toFixed(2)}) — draws may not be fully independent.</span>}
+                </div>
+              )}
+
+              <div style={{ display:"flex", alignItems:"center", gap:10, flexWrap:"wrap" }}>
+                <button onClick={generateAll} style={{ padding: "12px 28px", background: "linear-gradient(135deg," + C.acc + ",#b45309)", color: "#000", fontWeight: 800, fontSize: 14, border: "none", borderRadius: 10, cursor: "pointer", letterSpacing: 1, textTransform: "uppercase" }}>Generate All</button>
+                <div style={{ fontSize:9, color:C.dim, lineHeight:1.6 }}>
+                  <div>Odd/even trend (last 20): <b style={{color:C.txt}}>{recentOddAvg.toFixed(1)}</b> avg odd {recentOddAvg > 3.2 ? "→ weighting even" : recentOddAvg < 2.8 ? "→ weighting odd" : "→ balanced"}</div>
+                  <div>Sum range (p25–p75): <b style={{color:C.txt}}>{sumStats.p25}–{sumStats.p75}</b> · mean <b style={{color:C.txt}}>{sumStats.mean}</b></div>
+                  <div>Hot pairs tracked: <b style={{color:C.txt}}>{pairFreq.length}</b> · avoided in Contrarian &amp; Composite</div>
+                </div>
+              </div>
+
               {strats && (
                 <div style={{ marginTop: 20, display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(280px,1fr))", gap: 12 }}>
-                  {[{id:"contrarian",l:"Contrarian",d:"Cold + high zone",c:C.acc},{id:"balanced",l:"Balanced",d:"Even spread across ranges",c:C.acc2},{id:"overdue",l:"Overdue",d:"Longest gaps since drawn",c:C.acc3},{id:"hot",l:"Popular",d:"Most picked numbers (higher co-winner risk)",c:C.acc4},{id:"highzone",l:"High Zone",d:"Anti-birthday bias (32-49)",c:C.grn},{id:"composite",l:"Composite Contrarian",d:"All edges: high zone + no round nums + spread + anti-hot",c:C.grn}].map(function(meta, idx) {
+                  {[
+                    {id:"contrarian",l:"Contrarian",d:"Cold + high zone · avoids hot pairs",c:C.acc,feeds:["freq","pairs"]},
+                    {id:"balanced",l:"Balanced",d:"Even spread across zones",c:C.acc2,feeds:["zones"]},
+                    {id:"overdue",l:"Overdue",d:"Longest gaps since drawn",c:C.acc3,feeds:["gaps"]},
+                    {id:"hot",l:"Popular",d:"Most picked — highest co-winner risk",c:C.acc4,feeds:["freq"]},
+                    {id:"highzone",l:"High Zone",d:"Anti-birthday bias (32-49)",c:C.grn,feeds:["bday"]},
+                    {id:"composite",l:"Composite Contrarian",d:"High zone + anti-hot + odd/even trend + pair avoidance + min spacing",c:C.grn,feeds:["freq","pairs","bday","odd/even","gaps"]}
+                  ].map(function(meta, idx) {
                     var s = strats[idx];
+                    var evColor = s.coRisk === "low" ? (jackpot === "hype" ? C.acc : C.grn) : s.coRisk === "medium" ? C.acc : C.acc4;
+                    var evLabel = jackpot === "low" ? "Low EV" : s.coRisk === "low" ? (jackpot === "hype" ? "Med EV" : "Best EV") : s.coRisk === "medium" ? (jackpot === "hype" ? "Low EV" : "Med EV") : "Worst EV";
+                    var sumColor = s.sumRating === "typical" ? C.dim : C.acc3;
                     return <div key={meta.id} style={{ padding: 16, background: C.srf, borderRadius: 12, border: "1px solid " + meta.c + "33" }}>
-                      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 10 }}>
+                      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 10 }}>
                         <div>
                           <div style={{ fontWeight: 700, fontSize: 12, color: meta.c }}>{meta.l}</div>
                           <div style={{ fontSize: 9, color: C.dim, marginTop: 2 }}>{meta.d}</div>
                         </div>
+                        <div style={{ textAlign:"right" }}>
+                          <div style={{ fontSize:9, fontWeight:700, color:evColor, background:evColor+"18", padding:"2px 7px", borderRadius:4 }}>{evLabel}</div>
+                        </div>
                       </div>
-                      <div style={{ display: "flex", gap: 6, marginBottom: 8 }}>
+                      <div style={{ display: "flex", gap: 6, marginBottom: 10 }}>
                         {s.nums.map(function(x, i) { return <div key={i} style={{ width: 38, height: 38, borderRadius: "50%", display: "flex", alignItems: "center", justifyContent: "center", background: meta.c + "20", color: meta.c, fontWeight: 900, fontSize: 14, border: "1px solid " + meta.c + "44", animation: "popIn .3s ease " + (i * 0.05 + idx * 0.05) + "s both" }}>{x}</div>; })}
                       </div>
-                      <div style={{ display: "flex", gap: 12, fontSize: 9, color: C.dim }}>
-                        <span>Sum: <b style={{ color: C.txt }}>{s.sum}</b></span>
-                        <span>O/E: <b style={{ color: C.txt }}>{s.odd}/{6 - s.odd}</b></span>
-                        <span>Hi/Lo: <b style={{ color: C.txt }}>{s.high}/{6 - s.high}</b></span>
+                      <div style={{ display: "flex", gap: 8, fontSize: 9, color: C.dim, flexWrap:"wrap" }}>
+                        <span>Sum: <b style={{ color: sumColor }}>{s.sum}</b> <span style={{color:sumColor}}>({s.sumRating})</span></span>
+                        <span>O/E: <b style={{ color: C.txt }}>{s.odd}/{6-s.odd}</b></span>
+                        <span>Hi: <b style={{ color: C.txt }}>{s.high}/6</b></span>
+                        <span>Co-risk: <b style={{ color: s.coRisk==="low"?C.grn:s.coRisk==="medium"?C.acc:C.acc4 }}>{s.coRisk}</b></span>
+                        {s.pairRisk > 0 && <span style={{color:s.pairRisk>=2?C.acc4:C.acc}}>pairs: {s.pairRisk} hot</span>}
+                      </div>
+                      <div style={{ marginTop:8, display:"flex", gap:4, flexWrap:"wrap" }}>
+                        {meta.feeds.map(function(f){ return <span key={f} style={{fontSize:8, padding:"1px 5px", borderRadius:3, background:C.border, color:C.dim}}>{f}</span>; })}
                       </div>
                     </div>;
                   })}
