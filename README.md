@@ -1,12 +1,12 @@
-# 🎱 Oddball49
+# Oddball49
 
 **The numbers nobody picks.**
 
-A game theory engine for Singapore Pools TOTO that optimizes *conditional payout* — not win probability. Built on 100+ draws of statistical analysis.
+A game theory engine for Singapore Pools TOTO that optimizes *conditional payout* — not win probability. Built on 1,832 verified draws spanning 2008–2026.
 
 ## Live Demo
 
-👉 [**oddball49.github.io**](https://0xobscure.github.io/oddball49/)
+[oddball49.github.io](https://0xobscure.github.io/oddball49/)
 
 ## The Core Insight
 
@@ -14,13 +14,13 @@ All TOTO combinations have equal probability (1 in 13,983,816). But they don't h
 
 ## Features
 
-- 📊 100+ draw frequency analysis with Chi-Square testing
-- 🔥 Hot/Cold number tracking across configurable windows (All / 50 / 20)
-- 📈 Sum trends with moving average, odd/even splits, consecutive pairs
-- 🧠 Nash Equilibrium payout matrix & EV analysis
-- ❄️ Birthday zone bias analysis (1-31 vs 32-49)
-- 🎲 Strategy-informed number generator (Contrarian, Balanced, Overdue, Random)
-- 🔬 Serial independence testing between draws
+- 1,832-draw frequency analysis with Chi-Square testing
+- Hot/Cold number tracking across configurable windows (All / 50 / 20)
+- Sum trends with moving average, odd/even splits, consecutive pairs
+- Nash Equilibrium payout matrix & EV analysis
+- Birthday zone bias analysis (1-31 vs 32-49)
+- Strategy-informed number generator (6 modes)
+- Serial independence testing between draws
 
 ## Strategies
 
@@ -28,32 +28,33 @@ All TOTO combinations have equal probability (1 in 13,983,816). But they don't h
 |----------|----------|------|
 | **Contrarian** | Cold + high-zone numbers | Fewest co-winners → largest payout |
 | **Balanced** | Even spread across 1-49 | Structural coverage |
-| **Overdue** | Longest gap since drawn | Gambler's fallacy hedge |
-| **Random** | Uniform baseline | Control group |
+| **Overdue** | Longest gap since drawn | Anti-recency hedge |
+| **Hot** | Most frequently drawn | Baseline comparison |
+| **High Zone** | Anti-birthday bias (32-49) | Exploits documented player bias |
+| **Composite Contrarian** | All edges combined | High zone + anti-hot + min spacing |
 
 ## Data
 
-- `data/draws.csv` — Verified TOTO draw results
-- `src/draws.json` — JSON format for the dashboard
+- `data/draws.csv` — Canonical draw history (1,832 draws, 2008–2026)
+- `src/draws.json` — Pre-processed JSON for the dashboard
 - `scripts/backfill.py` — Utility to extend the dataset
 
 ### Adding New Draws
 
-**Option 1 — Manual entry:**
+**Manual entry:**
 ```bash
 python3 scripts/backfill.py --manual
 # Enter: YYYY-MM-DD n1 n2 n3 n4 n5 n6 additional
-# Example: 2026-03-10 5 12 23 34 41 47 9
 # Type 'done' to finish
 ```
 
-**Option 2 — Bulk import from file:**
+**Bulk import from file:**
 ```bash
 python3 scripts/backfill.py --import draws.txt
 ```
 File format: one draw per line — `YYYY-MM-DD n1 n2 n3 n4 n5 n6 additional`
 
-Both options update `data/draws.csv`. After adding draws, update the dashboard JSON:
+After adding draws, regenerate the JSON:
 ```bash
 python3 -c "
 import csv, json
@@ -64,9 +65,7 @@ print(f'Updated {len(draws)} draws')
 "
 ```
 
-Then rebuild: `npm run build`
-
-**Re-analysis is instant** — all statistics are computed client-side. Even 500+ draws take milliseconds.
+All statistics are computed client-side — even 1,800+ draws take milliseconds.
 
 ## Development
 
@@ -77,16 +76,16 @@ npm run dev
 
 Open [localhost:5173](http://localhost:5173)
 
-## Deploy to GitHub Pages
+## Deploy
 
-Push to `main` — GitHub Actions handles the rest.
+Push to `main` — GitHub Actions builds and deploys to GitHub Pages automatically.
 
 ## Tech Stack
 
 - React 18 + Vite
 - Recharts for data visualization
-- Pure inline styles (zero CSS dependencies)
-- GitHub Pages deployment
+- Pure inline styles (no CSS dependencies)
+- GitHub Pages via GitHub Actions
 
 ## Disclaimer
 
