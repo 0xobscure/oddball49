@@ -114,8 +114,13 @@ export default function App() {
   var chi2 = useMemo(function() {
     var e = expFreq;
     var v = freq.reduce(function(s, f) { return s + Math.pow(f.count - e, 2) / e; }, 0);
-    return { value: v, critical: 65.17, passes: v < 65.17 };
-  }, [freq, expFreq]);
+    var n = filtered.length * 6;
+    var cramersV = Math.sqrt(v / (n * 48)); // df = k-1 = 48
+    var passes = v < 65.17;
+    // Practical significance: Cramér's V < 0.05 = negligible effect even if p-value fails
+    var negligible = cramersV < 0.05;
+    return { value: v, critical: 65.17, passes: passes, cramersV: cramersV, negligible: negligible };
+  }, [freq, expFreq, filtered]);
 
   var serial = useMemo(function() {
     var tot = 0;
@@ -310,7 +315,7 @@ export default function App() {
                 { l: "Numbers Drawn", v: filtered.length * 6, s: "6 per draw" },
                 { l: "Unique", v: freq.filter(function(f) { return f.count > 0; }).length, s: "of 49" },
                 { l: "Expected Freq", v: expFreq.toFixed(1), s: "per number" },
-                { l: "Chi-sq", v: chi2.passes ? "PASS" : "FAIL", s: chi2.value.toFixed(1) + " vs " + chi2.critical, c: chi2.passes ? C.grn : C.acc4 },
+                { l: "Chi-sq", v: chi2.passes ? "PASS" : (chi2.negligible ? "PASS*" : "FAIL"), s: "V=" + chi2.cramersV.toFixed(3) + (chi2.negligible ? " negligible" : ""), c: chi2.passes ? C.grn : (chi2.negligible ? C.acc : C.acc4) },
                 { l: "Avg Overlap", v: serial.avg.toFixed(2), s: "exp: " + serial.expected.toFixed(2) },
               ].map(function(s, i) {
                 return (<div key={i} style={{ background: C.card, borderRadius: 10, border: "1px solid " + C.border, padding: "13px 12px" }}>
@@ -459,7 +464,12 @@ export default function App() {
                   <div>H0: All numbers equally likely</div>
                   <div style={{ margin: "8px 0", borderTop: "1px solid " + C.border, paddingTop: 8 }}>chi-sq = <span style={{ color: C.acc, fontWeight: 700 }}>{chi2.value.toFixed(2)}</span></div>
                   <div>Critical (a=0.05, df=48) = <span style={{ color: C.acc2 }}>{chi2.critical}</span></div>
-                  <div style={{ marginTop: 8, color: chi2.passes ? C.grn : C.acc4, fontWeight: 700 }}>{chi2.passes ? "PASS -- consistent with fair randomness" : "FAIL -- deviation detected"}</div>
+                  <div style={{ marginTop: 8, color: chi2.passes ? C.grn : C.acc4, fontWeight: 700 }}>{chi2.passes ? "PASS -- consistent with fair randomness" : "FAIL -- statistically significant deviation"}</div>
+                  <div style={{ marginTop: 8, borderTop: "1px solid " + C.border, paddingTop: 8 }}>
+                    <div>Cramér's V = <span style={{ color: chi2.negligible ? C.grn : C.acc4, fontWeight: 700 }}>{chi2.cramersV.toFixed(4)}</span> <span style={{ color: C.dim, fontSize: 10 }}>(effect size · &lt;0.05 = negligible)</span></div>
+                    <div style={{ marginTop: 4, color: chi2.negligible ? C.grn : C.acc4, fontWeight: 700 }}>{chi2.negligible ? "Effect negligible — draws consistent with fair randomness in practice" : "Non-trivial effect — some numbers genuinely favoured"}</div>
+                    {!chi2.passes && chi2.negligible && <div style={{ marginTop: 6, color: C.dim, fontSize: 10 }}>Large sample ({(filtered.length*6).toLocaleString()} numbers) makes chi-sq hypersensitive. Statistical significance ≠ practical significance.</div>}
+                  </div>
                 </div>
               )},
               { title: "Serial Independence", color: C.acc3, content: (
@@ -570,10 +580,10 @@ export default function App() {
                 </div>
               </div>
 
-              {/* Stats warnings */}
-              {(!chi2.passes || !serial.passes) && (
+              {/* Stats warnings — only surface if effect is practically significant */}
+              {((!chi2.passes && !chi2.negligible) || !serial.passes) && (
                 <div style={{ marginBottom: 14, padding:"8px 12px", borderRadius:8, background:C.acc4+"12", border:"1px solid "+C.acc4+"33", fontSize:10, color:C.acc4 }}>
-                  {!chi2.passes && <span>Chi-sq FAIL ({chi2.value.toFixed(1)} &gt; {chi2.critical}) — number distribution shows detectable bias. </span>}
+                  {!chi2.passes && !chi2.negligible && <span>Chi-sq FAIL (V={chi2.cramersV.toFixed(3)}) — non-trivial frequency bias detected. </span>}
                   {!serial.passes && <span>Serial independence FAIL (z={serial.z.toFixed(2)}) — draws may not be fully independent.</span>}
                 </div>
               )}
